@@ -1,75 +1,116 @@
-import { McpAgent } from "agents/mcp";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
+import {McpAgent} from "agents/mcp";
+import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
+import {apiClient} from "./utils/ApiClient";
+import {Idea} from "./types/Idea";
+import {formatIdea, formatMember} from "./utils/FormatResponse";
+import {User} from "./types/User";
 
 // Define our MCP agent with tools
 export class MyMCP extends McpAgent {
-	server = new McpServer({
-		name: "Authless Calculator",
-		version: "1.0.0",
-	});
+    server = new McpServer({
+        name: "Authless Calculator",
+        version: "1.0.0",
+    });
 
-	async init() {
-		// Simple addition tool
-		this.server.tool(
-			"add",
-			{ a: z.number(), b: z.number() },
-			async ({ a, b }) => ({
-				content: [{ type: "text", text: String(a + b) }],
-			})
-		);
+    async init() {
+        this.server.tool(
+            "get_ideas",
+            "Get Ideas from the IdeaScale",
+            async () => {
+                const ideas = await apiClient.get<Idea[]>("/a/rest/v1/ideas");
 
-		// Calculator tool with multiple operations
-		this.server.tool(
-			"calculate",
-			{
-				operation: z.enum(["add", "subtract", "multiply", "divide"]),
-				a: z.number(),
-				b: z.number(),
-			},
-			async ({ operation, a, b }) => {
-				let result: number;
-				switch (operation) {
-					case "add":
-						result = a + b;
-						break;
-					case "subtract":
-						result = a - b;
-						break;
-					case "multiply":
-						result = a * b;
-						break;
-					case "divide":
-						if (b === 0)
-							return {
-								content: [
-									{
-										type: "text",
-										text: "Error: Cannot divide by zero",
-									},
-								],
-							};
-						result = a / b;
-						break;
-				}
-				return { content: [{ type: "text", text: String(result) }] };
-			}
-		);
-	}
+                if (!ideas) {
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: "Failed to retrieve data.",
+                            },
+                        ],
+                    };
+                }
+
+                if (ideas.length === 0) {
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: "No ideas found.",
+                            },
+                        ],
+                    };
+                }
+
+                const formattedIdeas = ideas.map(formatIdea);
+                const ideasIntoText = `Ideas from the response:\n\n${formattedIdeas.join("\n")}`;
+
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: ideasIntoText,
+                        },
+                    ],
+                };
+            }
+        )
+
+        this.server.tool(
+            "get_members",
+            "Get all members information",
+            async () => {
+                const members = await apiClient.get<User[]>("/a/rest/v1/members");
+
+                if (!members) {
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: "Failed to retrieve data.",
+                            },
+                        ],
+                    };
+                }
+
+                if (members.length === 0) {
+                    return {
+                        content: [
+                            {
+                                type: "text",
+                                text: "No members found.",
+                            },
+                        ],
+                    };
+                }
+
+                const formattedMembers = members.map(formatMember);
+                const membersIntoText = `Members from the response:\n\n${formattedMembers.join("\n")}`;
+
+                return {
+                    content: [
+                        {
+                            type: "text",
+                            text: membersIntoText,
+                        },
+                    ],
+                };
+            }
+        )
+    }
 }
 
 export default {
-	fetch(request: Request, env: Env, ctx: ExecutionContext) {
-		const url = new URL(request.url);
+    fetch(request: Request, env: Env, ctx: ExecutionContext) {
+        const url = new URL(request.url);
 
-		if (url.pathname === "/sse" || url.pathname === "/sse/message") {
-			return MyMCP.serveSSE("/sse").fetch(request, env, ctx);
-		}
+        if (url.pathname === "/sse" || url.pathname === "/sse/message") {
+            return MyMCP.serveSSE("/sse").fetch(request, env, ctx);
+        }
 
-		if (url.pathname === "/mcp") {
-			return MyMCP.serve("/mcp").fetch(request, env, ctx);
-		}
+        if (url.pathname === "/mcp") {
+            return MyMCP.serve("/mcp").fetch(request, env, ctx);
+        }
 
-		return new Response("Not found", { status: 404 });
-	},
+        return new Response("Not found", {status: 404});
+    },
 };
